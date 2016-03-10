@@ -5,7 +5,7 @@ import java.util.Arrays;
  * Created by jmuia on 2016-03-08.
  */
 public class StopAndWaitUtils {
-    public static final int EOT_INDEX = 6;
+    public static final int EOT_INDEX = 7;
     public static final int MAX_PACKET_SIZE = 128;
 
     public static byte checksum(byte[] data) {
