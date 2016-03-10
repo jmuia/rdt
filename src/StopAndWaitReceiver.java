@@ -28,8 +28,6 @@ public class StopAndWaitReceiver {
         boolean endOfFile = false;
         byte[] rcvBuffer = new byte[StopAndWaitUtils.MAX_PACKET_SIZE];
 
-        int currentNumber = reliabilityNumber;
-
         socket = new DatagramSocket(receiverPort);
 
         while (!endOfFile) {
@@ -51,9 +49,8 @@ public class StopAndWaitReceiver {
 
             byte[] body = Arrays.copyOfRange(data, 2, data.length);
 
-            if (reliabilityNumber != 0 && --currentNumber == 0) {
-                currentNumber = reliabilityNumber;
-                System.out.println("Dropping packet: reliability number.");
+            if (shouldDropPacket(reliabilityNumber)) {
+                // System.out.println("Dropping packet: reliability number.");
 
             } else {
                 if (lastSeqNum == -1 || seqNum != lastSeqNum) {
@@ -68,6 +65,12 @@ public class StopAndWaitReceiver {
         fos.close();
         socket.close();
         System.out.println("File transfer completed");
+    }
+
+    private boolean shouldDropPacket(int rn) {
+        if (rn < 1) { return false; }
+        double random = Math.random();
+        return random <= (1 / rn);
     }
 
     private DatagramPacket makePacket(int packetNumber) {

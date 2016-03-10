@@ -5,8 +5,14 @@ import java.net.DatagramPacket;
 import java.net.DatagramSocket;
 import java.net.InetAddress;
 import java.util.ArrayList;
-import java.util.Timer;
-import java.util.TimerTask;
+import java.util.Collections;
+import java.util.Iterator;
+import java.util.List;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
+
 
 /**
  * Created by jmuia on 2016-03-09.
@@ -17,8 +23,10 @@ public class GoBackNSender {
     private static final int PACKET_DATA_SIZE = 124;
     private static final int MAX_WINDOW_SIZE = 128;
 
-    private Timer timer = new Timer();
-    private TimerTask timerTask;
+    private final ScheduledExecutorService timer = Executors.newSingleThreadScheduledExecutor();
+    private ScheduledFuture<?> timerTask;
+
+
 
     private InetAddress receiverAddress;
     private int receiverPort;
@@ -27,7 +35,7 @@ public class GoBackNSender {
     private int sendBase;
     private int nextSequenceNumber;
 
-    private ArrayList<DatagramPacket> windowPackets;
+    private List<DatagramPacket> windowPackets;
 
     private DatagramSocket socket;
 
@@ -45,7 +53,7 @@ public class GoBackNSender {
 
         FileInputStream fis = new FileInputStream(fileName);
 
-        byte[] rcvBuffer = new byte[StopAndWaitUtils.MAX_PACKET_SIZE];
+        byte[] rcvBuffer = new byte[GoBackNUtils.MAX_PACKET_SIZE];
 
         int bytesRead;
         boolean endOfFile = false;
@@ -55,11 +63,11 @@ public class GoBackNSender {
 
         nextSequenceNumber = 0;
         sendBase = 0;
-        windowPackets = new ArrayList<>();
+        windowPackets = Collections.synchronizedList(new ArrayList<>());
         socket = new DatagramSocket(senderPort);
 
-        while (!endOfFile) {
 
+        while (!endOfFile || windowPackets.size() != 0) {
             while (isInWindow(nextSequenceNumber) && !endOfFile) {
                 byte[] fileBuffer = new byte[PACKET_DATA_SIZE];
                 // read bytes
@@ -94,7 +102,7 @@ public class GoBackNSender {
                 socket.receive(receivePacket);
 
                 // validate ack
-                if (StopAndWaitUtils.isPacketCorrupt(receivePacket)) {
+                if (GoBackNUtils.isPacketCorrupt(receivePacket)) {
                     continue;
                 }
 
@@ -103,7 +111,7 @@ public class GoBackNSender {
                 int ackNum = (int) header;
 
                 if (isInWindow(ackNum)) {
-                    timerTask.cancel();
+                    cancelTimer();
 
                     synchronized (windowPackets) {
                         while (sendBase != ackNum) {
@@ -134,6 +142,7 @@ public class GoBackNSender {
         System.out.println("Transfer Time: " + Long.toString(duration) + " nanoseconds");
         System.out.println("Timeout Length: " + TIMEOUT + " milliseconds");
         System.out.println();
+        System.out.println(TIMEOUT + "," + fileSize + "," + windowSize + "," + Long.toString(duration));
     }
 
     private boolean isInWindow(int value) {
@@ -148,7 +157,7 @@ public class GoBackNSender {
         byte header = (byte) packetNumber;
 
         if (endOfFile) {
-            header |= (1 << StopAndWaitUtils.EOT_INDEX);
+            header |= (1 << GoBackNUtils.EOT_INDEX);
         }
 
         byte[] data = new byte[numberOfBytes+2];
@@ -156,34 +165,41 @@ public class GoBackNSender {
         data[1] = 0;
         System.arraycopy(buffer, 0, data, 2, numberOfBytes);
 
-        byte checksum = StopAndWaitUtils.checksum(data);
+        byte checksum = GoBackNUtils.checksum(data);
         data[1] = checksum;
 
         return new DatagramPacket(data, data.length, receiverAddress, receiverPort);
     }
 
-    private void startTimer() {
-        // set timer
-        timerTask = new TimerTask() {
-            @Override
-            public void run() {
-                try {
-                    // resend packet
-                    synchronized (windowPackets) {
-                        for (DatagramPacket p: windowPackets) {
-                            socket.send(p);
-                        }
-                    }
-
-                } catch (IOException e) {
-                    // handle error
-                    System.out.println(e.getMessage());
-                }
-                // reset timer
-                startTimer();
+    private void cancelTimer() {
+        synchronized (timer) {
+            if (timerTask != null && (!timerTask.isDone() || !timerTask.isCancelled())) {
+                timerTask.cancel(true);
             }
-        };
-        timer.schedule(timerTask, TIMEOUT);
+        }
+    }
+
+    private void startTimer() {
+        synchronized (timer) {
+            final Runnable runnable = new Runnable() {
+                public void run() {
+                    try {
+                        // resend packet
+                        synchronized (windowPackets) {
+                            Iterator i = windowPackets.iterator();
+                            while (i.hasNext())
+                                socket.send((DatagramPacket) i.next());
+                        }
+
+                    } catch (IOException e) {
+                        // handle error
+                        System.err.println(e.getMessage());
+                    }
+                }
+            };
+
+            timerTask = timer.scheduleWithFixedDelay(runnable, TIMEOUT, TIMEOUT, TimeUnit.MILLISECONDS);
+        }
     }
 
     public static void main(String[] argv) throws Exception {
@@ -194,13 +210,18 @@ public class GoBackNSender {
             System.out.println("1: UDP port number used by the receiver to receive data from the sender");
             System.out.println("2: UDP port number used by the sender to receive ACKs from the receiver");
             System.out.println("3: Name of the file to be transferred");
-            System.out.println("4: Window size");
+            System.out.println("4: Window size <= 128");
             System.exit(1);
         }
 
         int recPort = Integer.parseInt(argv[1]);
         int senderPort = Integer.parseInt(argv[2]);
         int windowSize = Integer.parseInt(argv[4]);
+
+        if (windowSize > 128) {
+            System.out.println("Window size must be <= 128");
+            System.exit(1);
+        }
 
         GoBackNSender gbnSender = new GoBackNSender(InetAddress.getByName(argv[0]), recPort, senderPort, windowSize);
 

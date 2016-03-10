@@ -11,7 +11,7 @@ import java.util.TimerTask;
  * Created by jmuia on 2016-03-07.
  */
 public class StopAndWaitSender {
-    private static final long TIMEOUT = 100; // mili
+    private static final long TIMEOUT = 100;
     private static final int PACKET_DATA_SIZE = 124;
 
     private Timer timer = new Timer();
@@ -102,6 +102,7 @@ public class StopAndWaitSender {
         System.out.println("Transfer Time: " + Long.toString(duration) + " nanoseconds");
         System.out.println("Timeout Length: " + TIMEOUT + " milliseconds");
         System.out.println();
+        System.out.println(TIMEOUT + "," + fileSize + "," + "" + "," + Long.toString(duration));
     }
 
     private DatagramPacket makePacket(int packetNumber, byte[] buffer, int numberOfBytes, boolean endOfFile) {
@@ -132,7 +133,7 @@ public class StopAndWaitSender {
                     socket.send(lastPacket);
                 } catch (IOException e) {
                     // handle error
-                    System.out.println(e.getMessage());
+                    System.err.println(e.getMessage());
                 }
                 // reset timer
                 startTimer();

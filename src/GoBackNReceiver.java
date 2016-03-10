@@ -28,9 +28,7 @@ public class GoBackNReceiver {
 
         int lastAck = -1;
         boolean endOfFile = false;
-        byte[] rcvBuffer = new byte[StopAndWaitUtils.MAX_PACKET_SIZE];
-
-        int currentNumber = reliabilityNumber;
+        byte[] rcvBuffer = new byte[GoBackNUtils.MAX_PACKET_SIZE];
 
         socket = new DatagramSocket(receiverPort);
 
@@ -39,23 +37,22 @@ public class GoBackNReceiver {
             DatagramPacket receivePacket = new DatagramPacket(rcvBuffer, rcvBuffer.length);
             socket.receive(receivePacket);
 
-            if (StopAndWaitUtils.isPacketCorrupt(receivePacket)) {
+            if (GoBackNUtils.isPacketCorrupt(receivePacket)) {
                 continue;
             }
 
             byte[] data = Arrays.copyOfRange(receivePacket.getData(), 0, receivePacket.getLength());
             byte header = data[0];
 
-            endOfFile = (header >> StopAndWaitUtils.EOT_INDEX & 1) == 1;
+            boolean endOfFileBit = (header >> GoBackNUtils.EOT_INDEX & 1) == 1;
 
-            header &= ~(1 << StopAndWaitUtils.EOT_INDEX);
+            header &= ~(1 << GoBackNUtils.EOT_INDEX);
             int seqNum = header & 0xFF;
 
             byte[] body = Arrays.copyOfRange(data, 2, data.length);
 
-            if (reliabilityNumber != 0 && --currentNumber == 0) {
-                currentNumber = reliabilityNumber;
-                System.out.println("Dropping packet: reliability number.");
+            if (shouldDropPacket(reliabilityNumber)) {
+                // System.out.println("Dropping packet: reliability number.");
 
             } else {
                 int ackNum;
@@ -63,6 +60,8 @@ public class GoBackNReceiver {
                     fos.write(body);
                     ackNum = seqNum;
                     lastAck = (lastAck + 1) % MAX_WINDOW_SIZE;
+                    endOfFile = endOfFileBit;
+
                 } else {
                     ackNum = lastAck;
                 }
@@ -78,9 +77,15 @@ public class GoBackNReceiver {
 
     private DatagramPacket makePacket(int packetNumber) {
         byte[] data = { (byte) packetNumber, 0 };
-        byte checksum = StopAndWaitUtils.checksum(data);
+        byte checksum = GoBackNUtils.checksum(data);
         data[1] = checksum;
         return new DatagramPacket(data, data.length, senderAddress, senderPort);
+    }
+
+    private boolean shouldDropPacket(int rn) {
+        if (rn < 1) { return false; }
+        double random = Math.random();
+        return random <= (1 / rn);
     }
 
     public static void main(String[] argv) throws Exception {

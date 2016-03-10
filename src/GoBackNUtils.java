@@ -4,7 +4,7 @@ import java.util.Arrays;
 /**
  * Created by jmuia on 2016-03-08.
  */
-public class StopAndWaitUtils {
+public class GoBackNUtils {
     public static final int EOT_INDEX = 7;
     public static final int MAX_PACKET_SIZE = 128;
 
@@ -37,7 +37,7 @@ public class StopAndWaitUtils {
         byte[] data = Arrays.copyOfRange(packet.getData(), 0, dataLength);
         byte checksum = data[1];
 
-        if (checksum != StopAndWaitUtils.checksumFromPacketData(data)) {
+        if (checksum != GoBackNUtils.checksumFromPacketData(data)) {
             // System.out.println("Dropping corrupt packet: checksum not same.");
             return true;
         }
